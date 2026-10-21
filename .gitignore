@@ -1,40 +1,8 @@
-super_mario_kart
-**/bin
+# Dependencies and TypeScript output
+node_modules/
+dist/
+*.tsbuildinfo
 
-# Prerequisites
-*.d
-
-# Compiled Object files
-*.slo
-*.lo
-*.o
-*.obj
-
-# Precompiled Headers
-*.gch
-*.pch
-
-# Compiled Dynamic libraries
-*.so
-*.dylib
-*.dll
-
-# Fortran module files
-*.mod
-*.smod
-
-# Compiled Static libraries
-*.lai
-*.la
-*.a
-*.lib
-
-# Executables
-*.exe
-*.out
-*.app
-
-#VScode
-.vscode
-
+# Local preferences
+.vscode/
 smk_settings.cfg
