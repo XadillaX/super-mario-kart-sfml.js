@@ -14,6 +14,9 @@ test('release build removes dead exports, folds dynamic imports, and emits only 
     const outputDirectory = path.join(directory, 'dist');
     await fs.mkdir(source);
     await fs.mkdir(outputDirectory);
+    const dependency = path.join(source, 'node_modules/bundle-fixture');
+    await fs.mkdir(dependency, { recursive: true });
+    await fs.writeFile(path.join(dependency, 'index.js'), 'exports.factor = 2;');
     await fs.writeFile(path.join(outputDirectory, 'stale.js.map'), 'old development output');
     await fs.writeFile(path.join(source, 'values.ts'), `
         export const used = 9;
@@ -23,8 +26,9 @@ test('release build removes dead exports, folds dynamic imports, and emits only 
     const entryPoint = path.join(source, 'main.ts');
     await fs.writeFile(entryPoint, `
         import { used } from './values';
+        import { factor } from 'bundle-fixture';
         export async function result() {
-            return used * (await import('./lazy.js')).multiplier;
+            return used * factor * (await import('./lazy.js')).multiplier;
         }
     `);
 
@@ -36,7 +40,7 @@ test('release build removes dead exports, folds dynamic imports, and emits only 
     const code = await fs.readFile(path.join(outputDirectory, 'main.js'), 'utf8');
     assert.doesNotMatch(code, /UNREACHABLE_RELEASE_MARKER/);
     await fs.rm(source, { recursive: true });
-    assert.equal(await require(path.join(outputDirectory, 'main.js')).result(), 27);
+    assert.equal(await require(path.join(outputDirectory, 'main.js')).result(), 54);
 });
 
 test('directly running the real release entry starts exactly one game', async t => {
@@ -49,12 +53,21 @@ test('directly running the real release entry starts exactly one game', async t 
     const script = `
         const fs = require('node:fs');
         const Module = require('node:module');
-        const sf = require('sfml.js');
         let windows = 0;
         const stop = new Error('stop before native window');
-        Object.defineProperty(sf, 'RenderWindow', {
-            value: class { constructor() { windows++; throw stop; } },
-        });
+        const load = Module._load;
+        Module._load = function(request, parent, isMain) {
+            const result = load.call(this, request, parent, isMain);
+            if (!request.endsWith('sfml.node')) return result;
+            return new Proxy(result, {
+                get(target, name) {
+                    if (name === 'createRenderWindow') {
+                        return () => { windows++; throw stop; };
+                    }
+                    return Reflect.get(target, name);
+                },
+            });
+        };
         console.error = error => { if (error !== stop) throw error; };
         const entry = new Module(${JSON.stringify(path.join(root, 'dist/main.js'))});
         entry.paths = Module._nodeModulePaths(${JSON.stringify(root)});

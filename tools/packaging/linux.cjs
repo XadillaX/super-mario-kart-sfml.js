@@ -240,7 +240,7 @@ async function createDebianPackage(context, appDir, libraries, privatePackages, 
     'Description: Standalone kart-racing game',
     '',
   ].join('\n'));
-  const sfml = path.join(appBase, 'app/node_modules/sfml.js');
+  const sfml = path.join(appBase, 'app/native');
   const privateLib = path.join(appBase, 'lib');
   // Scan every bundled ELF, not just the launcher: SFML and libstdc++ may require
   // a newer glibc than Node. Suppress only dependencies actually shipped here.
@@ -282,7 +282,7 @@ async function packagePlatform(context) {
   await fs.mkdir(output, { recursive: true });
   await prepareApp(appRoot);
   await createExecutable(executable, '../lib/super-mario-kart/app');
-  const sfml = path.join(appRoot, 'node_modules/sfml.js');
+  const sfml = path.join(appRoot, 'native');
   const libraries = await copyRuntimeLibraries([
     executable, path.join(sfml, 'build/Release/sfml.node'),
   ], privateLib, [path.join(sfml, 'third_party/sfml/lib')], run);

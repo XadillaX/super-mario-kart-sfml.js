@@ -3,7 +3,7 @@ set -eu
 
 app_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 library_dir="$app_dir/usr/lib/super-mario-kart"
-LD_LIBRARY_PATH="$library_dir/lib:$library_dir/app/node_modules/sfml.js/third_party/sfml/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+LD_LIBRARY_PATH="$library_dir/lib:$library_dir/app/native/third_party/sfml/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
 export LD_LIBRARY_PATH
 
 exec "$app_dir/usr/bin/super-mario-kart" "$@"

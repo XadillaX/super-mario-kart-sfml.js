@@ -1,10 +1,8 @@
 'use strict';
 
 const fs = require('node:fs/promises');
-const { existsSync } = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { createRequire } = require('node:module');
 const { execFileSync } = require('node:child_process');
 const { retainSfmlNotices } = require('./licenses.cjs');
 
@@ -59,54 +57,6 @@ async function copy(source, destination, options = {}) {
     });
 }
 
-/** Find a package root even when its exports hide package.json. */
-async function packageRoot(name, from) {
-    const requireFrom = createRequire(path.join(from, 'package.json'));
-    let directory = path.dirname(requireFrom.resolve(name));
-    while (directory !== path.dirname(directory)) {
-        const manifest = path.join(directory, 'package.json');
-        if (existsSync(manifest)) {
-            const metadata = JSON.parse(await fs.readFile(manifest, 'utf8'));
-            if (metadata.name === name) {
-                return directory;
-            }
-        }
-        directory = path.dirname(directory);
-    }
-    throw new Error(`Cannot find runtime dependency ${name}`);
-}
-
-/** Package only sfml.js's runtime JS graph, retaining each package's license. */
-async function copyRuntimePackages(root, appRoot) {
-    const seen = new Map();
-    async function visit(name, from) {
-        const source = await packageRoot(name, from);
-        const metadata = JSON.parse(await fs.readFile(path.join(source, 'package.json'), 'utf8'));
-        if (seen.has(name)) {
-            if (seen.get(name) !== metadata.version) {
-                throw new Error(`Conflicting runtime versions for ${name}`);
-            }
-            return;
-        }
-        seen.set(name, metadata.version);
-        await copy(source, path.join(appRoot, 'node_modules', name), {
-            filter(file) {
-                const parts = path.relative(source, file).split(path.sep);
-                return !parts.some(part => [
-                    'node_modules', 'test', 'tests', 'examples', '.github', '.git',
-                ].includes(part)) && !file.endsWith('.map');
-            },
-        });
-        for (const dependency of Object.keys(metadata.dependencies || {})) {
-            await visit(dependency, source);
-        }
-    }
-    // download, nan and node-gyp are build-time dependencies, not game runtime.
-    for (const name of ['basic-ftp', 'ipaddr.js', 'ssh2']) {
-        await visit(name, path.join(root, 'node_modules/sfml.js'));
-    }
-}
-
 /** Fetch a required upstream notice; packaging must not silently omit licenses. */
 async function download(url, destination) {
     const response = await fetch(url, { signal: AbortSignal.timeout(60_000) });
@@ -136,12 +86,13 @@ async function prepareApp(root, appRoot) {
         license: 'GPL-3.0-only',
     }, null, 2) + '\n');
     const nativeSource = path.join(root, 'node_modules/sfml.js');
-    const nativeTarget = path.join(appRoot, 'node_modules/sfml.js');
-    for (const name of ['dist', 'package.json', 'LICENSE', 'third_party/sfml/license.md']) {
-        await copy(path.join(nativeSource, name), path.join(nativeTarget, name), {
-            filter: file => !file.endsWith('.map') && !file.endsWith('.d.ts'),
-        });
-    }
+    const nativeTarget = path.join(appRoot, 'native');
+    await copy(path.join(nativeSource, 'LICENSE'), path.join(appRoot, 'licenses/sfml.js.txt'));
+    // SFML's numeric operators also import IpAddress and its bundled JS parser.
+    await copy(path.join(root, 'node_modules/ipaddr.js/LICENSE'),
+        path.join(appRoot, 'licenses/ipaddr.js.txt'));
+    await copy(path.join(nativeSource, 'third_party/sfml/license.md'),
+        path.join(appRoot, 'licenses/SFML.txt'));
     await copy(path.join(nativeSource, 'build/Release/sfml.node'),
         path.join(nativeTarget, 'build/Release/sfml.node'));
 
@@ -154,7 +105,6 @@ async function prepareApp(root, appRoot) {
             }
         }
     }
-    await copyRuntimePackages(root, appRoot);
     await retainSfmlNotices(appRoot);
     await download(`https://raw.githubusercontent.com/nodejs/node/${process.version}/LICENSE`,
         path.join(appRoot, 'licenses/Node.js.txt'));
@@ -164,7 +114,7 @@ async function prepareApp(root, appRoot) {
         'sfml.js 1.0.0: https://www.npmjs.com/package/sfml.js/v/1.0.0\n' +
         `Node.js ${process.version}: https://nodejs.org/download/release/${process.version}/\n` +
         'Portions of this software are copyright The FreeType Project (www.freetype.org).\n' +
-        'Dependency license notices are retained alongside their installed packages.\n');
+        'Dependency license notices are retained in the licenses directory.\n');
 }
 
 /** Embed a bootstrap in this exact Node binary, preserving the native addon ABI. */

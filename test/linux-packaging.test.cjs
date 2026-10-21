@@ -114,7 +114,7 @@ test('AppRun resolves a relocated bundle and forwards arguments and library path
   }).trim().split('\n');
   assert.equal(output[0], [
     path.join(appDir, 'usr/lib/super-mario-kart/lib'),
-    path.join(appDir, 'usr/lib/super-mario-kart/app/node_modules/sfml.js/third_party/sfml/lib'),
+    path.join(appDir, 'usr/lib/super-mario-kart/app/native/third_party/sfml/lib'),
     '/existing/lib',
   ].join(':'));
   assert.deepEqual(output.slice(1), ['--smoke-test', 'two words']);
@@ -143,7 +143,7 @@ test('Debian launcher finds its private runtime after extraction under a path wi
     env: { PATH: process.env.PATH },
   }).trim().split('\n');
   assert.deepEqual(output, [
-    `${privateDirectory}/lib:${privateDirectory}/app/node_modules/sfml.js/third_party/sfml/lib`,
+    `${privateDirectory}/lib:${privateDirectory}/app/native/third_party/sfml/lib`,
     '--smoke-test',
     'two words',
   ]);

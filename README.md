@@ -92,10 +92,13 @@ game code and assets; the executable embeds **Node.js 22.22.2**. Windows portabl
 downloads must keep the `app` directory and DLLs beside the executable.
 
 Release packaging runs esbuild directly on the TypeScript sources and replaces
-`dist/` with one readable `main.js`, without source maps or extra chunks. It folds
-dynamic game imports into that file and removes unused code where possible.
-The SFML package, native binding, shared libraries, and assets remain external.
-Packaged smoke tests exercise the same bundled game classes.
+`dist/` with one minified `main.js`, without source maps or extra chunks. It bundles
+the game and its required SFML JavaScript, folds dynamic imports into that file,
+and removes unused code where possible. Variable names, syntax, and whitespace
+are compressed; TypeScript sources stay readable. Packages do not ship a
+`node_modules` directory. The native binding and SFML shared libraries live under
+`native/` (Windows DLLs sit beside the executable); assets and licenses remain
+separate. Packaged smoke tests exercise the same bundled game classes.
 
 The macOS app is ad-hoc signed and **not notarized**. macOS may block its first
 launch: after trying to open the installed app, use **System Settings → Privacy
