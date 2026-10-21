@@ -1,4 +1,6 @@
-import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { homedir } from 'node:os';
+import { dirname, join } from 'node:path';
 import * as sf from 'sfml.js';
 import { Audio } from './audio/audio';
 import { BASIC_HEIGHT } from './entities/enums';
@@ -17,6 +19,47 @@ export class Settings {
     private static resolutionIndex = Settings.DEFAULT_RESOLUTION_INDEX;
     private static resolutionMultiplier =
         Settings.ALLOWED_MULTIPLIERS[Settings.DEFAULT_RESOLUTION_INDEX];
+
+    /** Resolves writable user settings without creating files or directories. */
+    static getFilePath(): string {
+        let directory = process.env.SMK_CONFIG_DIR;
+        if (!directory) {
+            switch (process.platform) {
+                case 'darwin':
+                    directory = join(homedir(), 'Library', 'Application Support', 'super-mario-kart-sfml.js');
+                    break;
+                case 'win32':
+                    directory = join(process.env.APPDATA || homedir(), 'super-mario-kart-sfml.js');
+                    break;
+                default:
+                    directory = join(
+                        process.env.XDG_CONFIG_HOME || join(homedir(), '.config'),
+                        'super-mario-kart-sfml.js',
+                    );
+                    break;
+            }
+        }
+        return join(directory, Settings.FILE_NAME);
+    }
+
+    /** Import the original project-root cfg once, preserving an existing user cfg. */
+    private static migrateLegacySettings(filePath: string): void {
+        const legacyPath = join(__dirname, '..', Settings.FILE_NAME);
+        if (existsSync(filePath) || !existsSync(legacyPath)) {
+            return;
+        }
+
+        try {
+            const contents = readFileSync(legacyPath);
+            mkdirSync(dirname(filePath), { recursive: true });
+            // Preserve bytes, not read-only bundle permissions; never replace another user's save.
+            writeFileSync(filePath, contents, { flag: 'wx' });
+        } catch (error) {
+            if ((error as NodeJS.ErrnoException).code !== 'EEXIST') {
+                console.error('Error while migrating settings:', error);
+            }
+        }
+    }
 
     /** Returns the multiplier of the original 256 × 224 base resolution. */
     static getResolutionMultiplier(): number {
@@ -94,13 +137,15 @@ export class Settings {
 
     /** Reads the original .cfg format, creating defaults when absent or invalid. */
     static tryLoadSettings(): void {
-        if (!existsSync(Settings.FILE_NAME)) {
+        const filePath = Settings.getFilePath();
+        Settings.migrateLegacySettings(filePath);
+        if (!existsSync(filePath)) {
             Settings.writeDefaultSettings();
             return;
         }
 
         try {
-            const lines = readFileSync(Settings.FILE_NAME, 'utf8').split(/\r?\n/);
+            const lines = readFileSync(filePath, 'utf8').split(/\r?\n/);
             // The first line is the human-readable header, not a key/value setting.
             for (let index = 1; index < lines.length; index++) {
                 const line = lines[index];
@@ -135,10 +180,12 @@ export class Settings {
             lines.push(`${index}=${Input.get(index)}`);
         }
 
+        const filePath = Settings.getFilePath();
         try {
-            writeFileSync(Settings.FILE_NAME, `${lines.join('\n')}\n`);
+            mkdirSync(dirname(filePath), { recursive: true });
+            writeFileSync(filePath, `${lines.join('\n')}\n`);
         } catch (error) {
-            console.error(`Error: cannot create ${Settings.FILE_NAME} configuration file`, error);
+            console.error(`Error: cannot create ${filePath} configuration file`, error);
         }
     }
 }

@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Super Mario Kart
+Comment=Kart racing powered by sfml.js
+Exec=super-mario-kart
+Icon=super-mario-kart
+Terminal=false
+Categories=Game;ArcadeGame;
+StartupNotify=false

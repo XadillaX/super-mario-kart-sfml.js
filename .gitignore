@@ -2,6 +2,7 @@
 node_modules/
 dist/
 *.tsbuildinfo
+release/
 
 # Local preferences
 .vscode/

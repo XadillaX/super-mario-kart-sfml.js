@@ -9,17 +9,27 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
+    "pretest": "npm run build",
+    "test": "node --test test/*.test.cjs",
+    "prepackage": "npm run build",
+    "package": "node tools/package.cjs",
     "start": "npm run build && node dist/main.js",
     "dev": "npm run start"
   },
   "engines": {
-    "node": ">=20.5.0"
+    "node": ">=22.22.2"
   },
   "dependencies": {
     "sfml.js": "1.0.0"
   },
   "devDependencies": {
     "@types/node": "20.19.0",
+    "postject": "1.0.0-alpha.6",
+    "rcedit": "5.0.2",
+    "sharp": "0.35.5",
     "typescript": "7.0.2"
+  },
+  "optionalDependencies": {
+    "appdmg": "0.6.6"
   }
 }

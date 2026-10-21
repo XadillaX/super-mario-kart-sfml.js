@@ -1,0 +1,9 @@
+#!/bin/sh
+set -eu
+
+bin_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+library_dir=$(CDPATH= cd -- "$bin_dir/../lib/super-mario-kart" && pwd)
+LD_LIBRARY_PATH="$library_dir/lib:$library_dir/app/node_modules/sfml.js/third_party/sfml/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+export LD_LIBRARY_PATH
+
+exec "$library_dir/super-mario-kart" "$@"

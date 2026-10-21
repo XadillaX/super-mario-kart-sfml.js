@@ -1,0 +1,317 @@
+name: Native Packages
+
+on:
+  push:
+    branches: [master]
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: native-packages-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
+
+jobs:
+  build:
+    name: Package ${{ matrix.target }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-15-intel
+            arch: x64
+            target: macos-x64
+          - runner: macos-15
+            arch: arm64
+            target: macos-arm64
+          - runner: windows-2022
+            arch: x64
+            target: windows-x64
+          - runner: ubuntu-24.04
+            arch: x64
+            target: linux-x64
+    env:
+      LIBGL_ALWAYS_SOFTWARE: '1'
+      GALLIUM_DRIVER: llvmpipe
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.22.2'
+          architecture: ${{ matrix.arch }}
+          cache: npm
+
+      # Python is only the node-gyp build prerequisite; automation below is JS.
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Check native Node and release version
+        uses: actions/github-script@v7
+        env:
+          EXPECTED_ARCH: ${{ matrix.arch }}
+        with:
+          script: |
+            const fs = require('node:fs');
+            const { execFileSync } = require('node:child_process');
+            const actual = execFileSync('node', [
+              '-p', 'JSON.stringify({version:process.version,arch:process.arch})',
+            ], { encoding: 'utf8' });
+            const node = JSON.parse(actual);
+            if (node.version !== 'v22.22.2' || node.arch !== process.env.EXPECTED_ARCH) {
+              throw new Error(`Expected native Node 22.22.2/${process.env.EXPECTED_ARCH}: ${actual}`);
+            }
+            const { version } = JSON.parse(fs.readFileSync('package.json', 'utf8'));
+            if (context.ref.startsWith('refs/tags/') && context.ref !== `refs/tags/v${version}`) {
+              throw new Error(`Release tag must match package.json version v${version}`);
+            }
+
+      - name: Install Linux build, graphics, audio, and packaging tools
+        if: runner.os == 'Linux'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const { execFileSync } = require('node:child_process');
+            const run = (command, args) => execFileSync(command, args, { stdio: 'inherit' });
+            run('sudo', ['apt-get', 'update']);
+            run('sudo', ['apt-get', 'install', '-y',
+              'build-essential', 'xvfb', 'xauth', 'libgl1-mesa-dev', 'libgl1-mesa-dri',
+              'libx11-dev', 'libxrandr-dev', 'libxcursor-dev', 'libxi-dev',
+              'libudev-dev', 'libfreetype-dev', 'libflac-dev', 'libvorbis-dev',
+              'libopenal-dev', 'libmbedtls-dev', 'libasound2-dev', 'pulseaudio',
+              'patchelf', 'file', 'desktop-file-utils', 'libfuse2t64',
+            ]);
+            run('pulseaudio', ['--start', '--exit-idle-time=-1']);
+            run('pactl', ['load-module', 'module-null-sink', 'sink_name=smk_ci']);
+            run('pactl', ['set-default-sink', 'smk_ci']);
+
+      - name: Set up MSBuild
+        if: runner.os == 'Windows'
+        uses: microsoft/setup-msbuild@v2
+
+      # System-wide deployment on this disposable CI runner only. Never copy Mesa
+      # into node_modules, the package staging tree, or a distributable.
+      - name: Install Windows software OpenGL for native smoke tests
+        if: runner.os == 'Windows'
+        uses: ssciwr/setup-mesa-dist-win@v3
+        with:
+          version: '26.0.3'
+          deployment-choice: '1'
+
+      - name: Install NSIS
+        if: runner.os == 'Windows'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('node:fs');
+            const path = require('node:path');
+            const { execFileSync } = require('node:child_process');
+            execFileSync('choco', ['install', 'nsis', '--yes', '--no-progress'], {
+              stdio: 'inherit',
+            });
+            const nsis = path.join(process.env['ProgramFiles(x86)'], 'NSIS');
+            fs.accessSync(path.join(nsis, 'makensis.exe'));
+            core.addPath(nsis);
+
+      # npm ci compiles the actual SFML addon for this runner and Node ABI.
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run build
+
+      - name: Test
+        if: runner.os != 'Linux'
+        run: npm test
+
+      - name: Test with software GL and Xvfb
+        if: runner.os == 'Linux'
+        run: xvfb-run -a -s "-screen 0 1280x1024x24 -noreset" npm test
+
+      # The parent packager smoke-tests the real bundled SEA executable and SFML
+      # from an unrelated cwd before returning. macOS ad-hoc signing and the DMG
+      # drag-to-Applications background belong to it; no notarization is used.
+      - name: Package and smoke-test native bundles
+        if: runner.os != 'Linux'
+        run: npm run package -- --out release
+
+      - name: Package and smoke-test native bundles with Xvfb
+        if: runner.os == 'Linux'
+        run: xvfb-run -a -s "-screen 0 1280x1024x24 -noreset" npm run package -- --out release
+
+      # Upload final archives/installers only. Executable bits stay inside the
+      # archives, not in upload-artifact's filesystem metadata.
+      - name: Upload native packages
+        uses: actions/upload-artifact@v4
+        with:
+          name: super-mario-kart-${{ matrix.target }}
+          path: |
+            release/*.zip
+            release/*.dmg
+            release/*.exe
+            release/*.AppImage
+            release/*.deb
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 14
+
+  release:
+    name: Publish version tag
+    needs: build
+    if: >-
+      needs.build.result == 'success' &&
+      (github.event_name == 'push' || github.event_name == 'workflow_dispatch') &&
+      startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: write
+    steps:
+      - name: Download all four successful builds
+        uses: actions/download-artifact@v4
+        with:
+          pattern: super-mario-kart-*
+          path: ${{ runner.temp }}/release-artifacts
+          merge-multiple: false
+
+      - name: Validate packages, calculate checksums, and publish
+        uses: actions/github-script@v7
+        with:
+          script: |
+            // BEGIN publish-release
+            const fs = require('node:fs/promises');
+            const { createReadStream } = require('node:fs');
+            const { createHash } = require('node:crypto');
+            const path = require('node:path');
+            if (!['push', 'workflow_dispatch'].includes(context.eventName)) {
+              throw new Error('This event cannot publish a release');
+            }
+            const tag = context.ref.replace(/^refs\/tags\//, '');
+            if (!context.ref.startsWith('refs/tags/v') ||
+                !/^v\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/.test(tag)) {
+              throw new Error('A version tag is required to publish a release');
+            }
+            const targets = {
+              'macos-x64': ['.zip', '.dmg'],
+              'macos-arm64': ['.zip', '.dmg'],
+              'windows-x64': ['.zip', '.exe'],
+              'linux-x64': ['.AppImage', '.deb'],
+            };
+            const directory = path.join(process.env.RUNNER_TEMP, 'release-artifacts');
+            const groups = await fs.readdir(directory, { withFileTypes: true });
+            const expectedGroups = Object.keys(targets).map(target => `super-mario-kart-${target}`);
+            if (groups.length !== expectedGroups.length ||
+                groups.some(group => !group.isDirectory() || !expectedGroups.includes(group.name))) {
+              throw new Error('Expected exactly four platform artifacts');
+            }
+            const files = [];
+            const names = new Set();
+            for (const [target, extensions] of Object.entries(targets)) {
+              const folder = path.join(directory, `super-mario-kart-${target}`);
+              const entries = await fs.readdir(folder, { withFileTypes: true });
+              if (entries.length !== extensions.length ||
+                  extensions.some(extension =>
+                    entries.filter(entry => entry.name.endsWith(extension)).length !== 1)) {
+                throw new Error(`Incomplete or unexpected package artifacts for ${target}`);
+              }
+              for (const entry of entries) {
+                if (!entry.isFile() || !/^[A-Za-z0-9._+-]+$/.test(entry.name)) {
+                  throw new Error(`Invalid package artifact: ${entry.name}`);
+                }
+                if (names.has(entry.name)) {
+                  throw new Error(`Duplicate artifact name: ${entry.name}`);
+                }
+                const identity = `-${tag.slice(1)}-${target}`;
+                if (!entry.name.includes(`${identity}.`) && !entry.name.includes(`${identity}-`)) {
+                  throw new Error(`Artifact version or target mismatch: ${entry.name}`);
+                }
+                names.add(entry.name);
+                const file = path.join(folder, entry.name);
+                if ((await fs.stat(file)).size === 0) {
+                  throw new Error(`Empty package artifact: ${entry.name}`);
+                }
+                files.push({ name: entry.name, file });
+              }
+            }
+            files.sort((a, b) => a.name < b.name ? -1 : a.name > b.name ? 1 : 0);
+            const checksums = [];
+            for (const { name, file } of files) {
+              const hash = createHash('sha256');
+              for await (const chunk of createReadStream(file)) hash.update(chunk);
+              checksums.push(`${hash.digest('hex')}  ${name}\n`);
+            }
+            const checksumFile = path.join(directory, 'SHA256SUMS');
+            await fs.writeFile(checksumFile, checksums.join(''));
+            files.push({ name: 'SHA256SUMS', file: checksumFile });
+            const prerelease = tag.slice(1).split('+')[0].includes('-');
+            const body = [
+              `Native Super Mario Kart packages for ${tag}, built with Node.js 22.22.2 and SFML.`,
+              '',
+              '### Downloads',
+              '- macOS: choose arm64 for Apple Silicon or x64 for Intel. Open the DMG and drag',
+              '  the app to Applications using its background guide, or extract the ZIP.',
+              '  The app is ad-hoc signed only, not Developer ID signed or notarized.',
+              '  macOS Gatekeeper may block first launch; review the source and checksums',
+              '  before using the system Privacy & Security settings to approve it.',
+              '- Windows x64: use the per-user Setup.exe installer or extract the portable ZIP.',
+              '  These builds are unsigned. Mesa is used in CI only and is not distributed.',
+              '- Linux x64: install the Ubuntu 24.04 .deb or download the AppImage.',
+              '  Run chmod +x on the AppImage before launching; a working system OpenGL driver',
+              '  is required. The AppImage targets Ubuntu 24.04 or a compatible newer system.',
+              '',
+              'SHA256SUMS covers every downloadable package. Node.js does not need to be installed.',
+              'All four native build and bundled-executable smoke-test jobs passed before publication.',
+            ].join('\n');
+            const parameters = {
+              ...context.repo,
+              tag_name: tag,
+              name: `Super Mario Kart ${tag}`,
+              body,
+              prerelease,
+            };
+            const releases = await github.paginate(github.rest.repos.listReleases, {
+              ...context.repo, per_page: 100,
+            });
+            let release = releases.find(item => item.tag_name === tag);
+            if (release && !release.draft) {
+              throw new Error(`Release ${tag} is already published; refusing to replace it`);
+            }
+            if (release) {
+              const expectedNames = new Set(files.map(file => file.name));
+              if (release.assets.some(asset => !expectedNames.has(asset.name))) {
+                throw new Error('Existing draft contains unexpected assets; refusing to replace them');
+              }
+              for (const asset of release.assets) {
+                await github.rest.repos.deleteReleaseAsset({
+                  ...context.repo, asset_id: asset.id,
+                });
+              }
+            } else {
+              ({ data: release } = await github.rest.repos.createRelease({
+                ...parameters, draft: true,
+              }));
+            }
+            // Keep the release private until all eight packages and checksums are uploaded.
+            for (const { name, file } of files) {
+              await github.rest.repos.uploadReleaseAsset({
+                ...context.repo,
+                release_id: release.id,
+                name,
+                headers: { 'content-type': 'application/octet-stream' },
+                data: await fs.readFile(file),
+              });
+            }
+            await github.rest.repos.updateRelease({
+              ...parameters,
+              release_id: release.id,
+              draft: false,
+              make_latest: prerelease ? 'false' : 'true',
+            });
+            core.info(`Published ${tag} with ${files.length - 1} native packages and SHA256SUMS`);
+            // END publish-release

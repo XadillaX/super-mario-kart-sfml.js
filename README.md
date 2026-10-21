@@ -37,7 +37,11 @@ These previews come from the upstream project and show the assets retained by th
 
 ## Requirements
 
-- Node.js **20.5 or newer**, with npm.
+Downloadable application packages include Node.js, SFML, the native binding,
+and the game assets. They do not require a separate Node.js installation.
+The following requirements apply when running from source:
+
+- Node.js **22.22.2 or newer**, with npm.
 - A graphical desktop and audio output for the native SFML window.
 - The native build prerequisites described in the
   [sfml.js installation guide](https://www.npmjs.com/package/sfml.js).
@@ -70,6 +74,59 @@ For development:
 | `node dist/main.js` | Run the compiled game |
 | `npm run dev` | Build and run, equivalent to `npm start` |
 
+## Desktop packages
+
+The [Desktop release workflow](https://github.com/XadillaX/super-mario-kart-sfml.js/actions/workflows/release.yml)
+builds these native packages:
+
+| Platform | Downloads | Installation |
+| --- | --- | --- |
+| macOS 13+, Intel | `macos-x64.dmg`, `macos-x64.zip` | Open the DMG and drag the game into Applications |
+| macOS 13+, Apple Silicon | `macos-arm64.dmg`, `macos-arm64.zip` | Open the DMG and drag the game into Applications |
+| Windows x64 | Setup `.exe`, portable `.zip` | Run the installer, or extract the entire portable ZIP |
+| Ubuntu 24.04+ x64 | `.deb`, `.AppImage` | Install the Debian package, or make the AppImage executable and run it |
+
+Actual filenames also include the game version. All packages contain the same
+game code and assets; the executable embeds **Node.js 22.22.2**. Windows portable
+downloads must keep the `app` directory and DLLs beside the executable.
+
+The macOS app is ad-hoc signed and **not notarized**. macOS may block its first
+launch: after trying to open the installed app, use **System Settings → Privacy
+& Security → Open Anyway**. There is no Developer ID or Apple account dependency
+in the build workflow. Windows builds are also unsigned.
+
+For Ubuntu:
+
+```bash
+sudo apt install ./super-mario-kart-*.deb
+chmod +x ./super-mario-kart-*.AppImage
+./super-mario-kart-*.AppImage
+```
+
+AppImage needs FUSE 2 (`sudo apt install libfuse2t64` on Ubuntu 24.04).
+`./super-mario-kart-*.AppImage --appimage-extract-and-run` runs without FUSE.
+A graphical desktop with OpenGL support is required.
+
+Pushes, pull requests, and manual workflow runs upload downloadable **Actions
+artifacts**. Pushing a version tag matching `package.json`, such as `v1.0.0`,
+publishes a GitHub Release only after all four native builds and packaged
+runtime smoke tests pass. Releases include `SHA256SUMS`.
+
+To package locally, use Node.js **22.22.2**, install dependencies with `npm ci`,
+and run:
+
+```bash
+npm run typecheck
+npm test
+npm run package
+```
+
+Output goes to the ignored `release/` directory. Packaging runs natively on the
+target OS and architecture. It requires Xcode command-line tools on macOS,
+NSIS and Visual C++ tools on Windows, or the Linux dependencies installed by
+the workflow. All packaging scripts are JavaScript; Python is used only by
+`node-gyp` while compiling the native dependency.
+
 ## Controls
 
 | Action | Default key |
@@ -88,7 +145,15 @@ For development:
 In the pause menu, choose **No** and press **Enter** to resume, or choose
 **Yes** to give up. The **Controls** menu changes key bindings; **Settings**
 adjusts music volume, sound effects volume, and resolution. Preferences are
-saved in `smk_settings.cfg`.
+saved in `smk_settings.cfg` inside the platform's writable user configuration
+directory:
+
+- macOS: `~/Library/Application Support/super-mario-kart-sfml.js/`
+- Windows: `%APPDATA%/super-mario-kart-sfml.js/`
+- Linux: `${XDG_CONFIG_HOME:-~/.config}/super-mario-kart-sfml.js/`
+
+Set `SMK_CONFIG_DIR` to choose another directory. An existing configuration
+in the game directory is imported once when the user configuration is absent.
 
 Mario and Luigi have balanced handling. Peach and Yoshi accelerate faster;
 Koopa and Toad turn faster; Bowser and Donkey Kong Jr. have more weight and a
