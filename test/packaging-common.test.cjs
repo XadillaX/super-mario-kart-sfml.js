@@ -15,15 +15,35 @@ test('rejects unsupported binaries and unsafe versions before packaging', () => 
     assert.doesNotThrow(() => validateTarget('linux', 'x64', '1.0.0'));
 });
 
-test('launcher resolves its payload beside the relocated executable, not cwd', async () => {
+test('launcher runs embedded code once with virtual paths and no external JS file', async () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'smk launcher '));
     try {
         const app = path.join(root, 'relocated game', 'app');
-        fs.mkdirSync(path.join(app, 'dist'), { recursive: true });
-        fs.writeFileSync(path.join(app, 'dist/main.js'),
-            'exports.main = async () => { globalThis.__smkBootstrapRan = true; };\n');
+        fs.mkdirSync(app, { recursive: true });
+        const result = path.join(app, 'result.json');
+        const source = `
+            if (require.main === module) throw new Error('duplicate direct startup');
+            exports.main = async () => {
+                require('node:fs').writeFileSync(${JSON.stringify(result)}, JSON.stringify({
+                    filename: __filename,
+                    dirname: __dirname,
+                    resolved: require.resolve('node:fs'),
+                    count: (globalThis.__smkBootstrapRuns || 0) + 1,
+                }));
+                globalThis.__smkBootstrapRuns = (globalThis.__smkBootstrapRuns || 0) + 1;
+            };
+        `;
         const sandbox = {
-            require,
+            require(name) {
+                if (name === 'node:sea') {
+                    return { getAsset(key, encoding) {
+                        assert.equal(key, 'game.js');
+                        assert.equal(encoding, 'utf8');
+                        return source;
+                    } };
+                }
+                return require(name);
+            },
             console,
             process: {
                 execPath: path.join(root, 'relocated game', 'SuperMarioKart'),
@@ -34,10 +54,16 @@ test('launcher resolves its payload beside the relocated executable, not cwd', a
             },
         };
         await vm.runInNewContext(bootstrapSource('app'), sandbox);
-        assert.equal(globalThis.__smkBootstrapRan, true);
+        assert.deepEqual(JSON.parse(fs.readFileSync(result, 'utf8')), {
+            filename: path.join(app, 'dist/main.js'),
+            dirname: path.join(app, 'dist'),
+            resolved: 'node:fs',
+            count: 1,
+        });
+        assert.equal(fs.existsSync(path.join(app, 'dist')), false);
         assert.equal(sandbox.process.exitCode, undefined);
     } finally {
-        delete globalThis.__smkBootstrapRan;
+        delete globalThis.__smkBootstrapRuns;
         fs.rmSync(root, { recursive: true, force: true });
     }
 });

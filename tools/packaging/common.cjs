@@ -22,19 +22,27 @@ function run(command, args, options = {}) {
     return execFileSync(command, args, { stdio: 'inherit', ...options });
 }
 
-/** The embedded SEA entry resolves external modules from the executable location. */
+/** Execute embedded JavaScript in memory with relocatable native and asset paths. */
 function bootstrapSource(relativeAppPath) {
     return `'use strict';
 const path = require('node:path');
 const { createRequire } = require('node:module');
+const { getAsset } = require('node:sea');
+const { compileFunction } = require('node:vm');
 const appRoot = path.resolve(path.dirname(process.execPath), ${JSON.stringify(relativeAppPath)});
-const appRequire = createRequire(path.join(appRoot, 'package.json'));
+// This filename is virtual: __dirname-based game and native paths remain stable.
+const filename = path.join(appRoot, 'dist/main.js');
+const appRequire = createRequire(filename);
 if (process.platform === 'win32') {
     process.env.PATH = path.dirname(process.execPath) + path.delimiter + (process.env.PATH || '');
 }
 process.chdir(appRoot);
 (async () => {
-    const game = appRequire('./dist/main.js');
+    const gameModule = { exports: {} };
+    const load = compileFunction(getAsset('game.js', 'utf8'),
+        ['exports', 'require', 'module', '__filename', '__dirname'], { filename });
+    load(gameModule.exports, appRequire, gameModule, filename, path.dirname(filename));
+    const game = gameModule.exports;
     if (process.argv.includes('--smoke-test')) {
         await game.smokeTest(appRoot);
     } else {
@@ -67,13 +75,13 @@ async function download(url, destination) {
     await fs.writeFile(destination, Buffer.from(await response.arrayBuffer()));
 }
 
-/** Assemble an installed application's immutable code, resources and native binding. */
+/** Assemble external resources and native libraries; JavaScript lives in the SEA. */
 async function prepareApp(root, appRoot) {
     const distFiles = await fs.readdir(path.join(root, 'dist'));
     if (distFiles.length !== 1 || distFiles[0] !== 'main.js') {
         throw new Error('Run npm run build:release before packaging: dist must contain only main.js');
     }
-    for (const name of ['dist', 'assets', 'LICENSE', 'README.md']) {
+    for (const name of ['assets', 'LICENSE', 'README.md']) {
         await copy(path.join(root, name), path.join(appRoot, name), {
             filter: file => !file.endsWith('.map'),
         });
@@ -82,7 +90,6 @@ async function prepareApp(root, appRoot) {
         name: 'super-mario-kart-sfml.js',
         version: require(path.join(root, 'package.json')).version,
         type: 'commonjs',
-        main: 'dist/main.js',
         license: 'GPL-3.0-only',
     }, null, 2) + '\n');
     const nativeSource = path.join(root, 'node_modules/sfml.js');
@@ -117,7 +124,7 @@ async function prepareApp(root, appRoot) {
         'Dependency license notices are retained in the licenses directory.\n');
 }
 
-/** Embed a bootstrap in this exact Node binary, preserving the native addon ABI. */
+/** Embed the bootstrap and complete JS bundle in the exact Node binary used to build. */
 async function createExecutable(root, staging, executable, relativeAppPath, version) {
     const sea = path.join(staging, 'sea');
     await fs.mkdir(sea, { recursive: true });
@@ -128,6 +135,7 @@ async function createExecutable(root, staging, executable, relativeAppPath, vers
     await fs.writeFile(config, JSON.stringify({
         main,
         output: blob,
+        assets: { 'game.js': path.join(root, 'dist/main.js') },
         disableExperimentalSEAWarning: true,
         useSnapshot: false,
         useCodeCache: false,

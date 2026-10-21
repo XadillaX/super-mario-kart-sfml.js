@@ -135,16 +135,22 @@ async function findMakensis() {
 /** Exercise silent install and uninstall only on the disposable CI runner. */
 async function smokeInstaller(installer, staging, smoke, run) {
   const installed = path.join(staging, 'installed smoke with spaces');
-  await fs.mkdir(path.join(installed, 'app'), { recursive: true });
+  await fs.mkdir(path.join(installed, 'app/dist'), { recursive: true });
+  const legacyScript = path.join(installed, 'app/dist/main.js');
+  await fs.writeFile(legacyScript, 'throw new Error("obsolete v1.0.0 external game");');
   const unowned = [
     path.join(installed, 'unrelated.dll'),
     path.join(installed, 'app/unrelated.txt'),
+    path.join(installed, 'app/dist/unrelated.txt'),
   ];
   for (const file of unowned) await fs.writeFile(file, 'not owned by the game');
   // NSIS requires these last arguments to be unquoted, including paths with spaces.
   const options = { windowsVerbatimArguments: true, timeout: 180_000 };
   await run(installer, ['/S', `/D=${installed}`], options);
   try {
+    if ((await fs.readdir(path.dirname(legacyScript))).includes('main.js')) {
+      throw new Error('Upgrade retained the obsolete external game script');
+    }
     await smoke(path.join(installed, 'SuperMarioKart.exe'));
   } finally {
     await run(path.join(installed, 'Uninstall.exe'), ['/S', `_?=${installed}`], options);

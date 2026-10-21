@@ -44,6 +44,9 @@ Section "Game (required)"
   SectionIn RO
   SetOutPath "$INSTDIR"
   File /r "@BUNDLE@\*"
+  ; v1.0.0 stored its game script outside the executable. Remove that owned file only.
+  Delete "$INSTDIR\app\dist\main.js"
+  RMDir "$INSTDIR\app\dist"
   WriteUninstaller "$INSTDIR\Uninstall.exe"
   CreateShortcut "$SMPROGRAMS\${PRODUCT_NAME}.lnk" "$INSTDIR\SuperMarioKart.exe" "" "$INSTDIR\icon.ico"
 

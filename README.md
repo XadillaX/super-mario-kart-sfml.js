@@ -96,9 +96,12 @@ Release packaging runs esbuild directly on the TypeScript sources and replaces
 the game and its required SFML JavaScript, folds dynamic imports into that file,
 and removes unused code where possible. Variable names, syntax, and whitespace
 are compressed; TypeScript sources stay readable. Packages do not ship a
-`node_modules` directory. The native binding and SFML shared libraries live under
+`node_modules` directory or external JavaScript files. The packager embeds
+`main.js` in the Node.js SEA executable and runs it directly from memory without
+extracting it to disk. The native binding and SFML shared libraries live under
 `native/` (Windows DLLs sit beside the executable); assets and licenses remain
-separate. Packaged smoke tests exercise the same bundled game classes.
+separate. Packaged smoke tests exercise the embedded game and verify that no
+external JavaScript remains.
 
 The macOS app is ad-hoc signed and **not notarized**. macOS may block its first
 launch: after trying to open the installed app, use **System Settings → Privacy

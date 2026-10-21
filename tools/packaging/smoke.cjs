@@ -1,6 +1,7 @@
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
+const { isSea } = require('node:sea');
 const { setImmediate: yieldToEventLoop } = require('node:timers/promises');
 
 /** Validates all course cache pairs and snapshots their bytes and modification times. */
@@ -37,9 +38,14 @@ async function checkImages(sf, directory) {
     return count;
 }
 
-/** Runs against the external payload, with no dependency on the build checkout. */
+/** Exercise embedded code and external resources without the build checkout. */
 async function run(appRoot, runtime) {
     appRoot = fs.realpathSync(appRoot);
+    if (isSea()) {
+        const scripts = fs.readdirSync(appRoot, { recursive: true })
+            .filter(name => /\.(?:js|cjs|mjs)$/.test(name));
+        assert.deepEqual(scripts, [], 'A native package must not contain external JavaScript');
+    }
     const previousCwd = process.cwd();
     const resultPath = process.env.SMK_SMOKE_RESULT
         ? path.resolve(process.env.SMK_SMOKE_RESULT) : undefined;
