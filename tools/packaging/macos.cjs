@@ -109,6 +109,7 @@ async function packagePlatform(context) {
     const dmg = path.join(output, `${basename}.dmg`);
     const background = await createBackground(staging);
     const appdmg = require('appdmg');
+    await fs.rm(dmg, { force: true });
     await new Promise((resolve, reject) => {
         const job = appdmg({
             target: dmg,
@@ -145,7 +146,12 @@ async function packagePlatform(context) {
         }
         await smoke(path.join(mount, 'Super Mario Kart.app/Contents/MacOS/SuperMarioKart'));
     } finally {
-        run('hdiutil', ['detach', mount]);
+        try {
+            run('hdiutil', ['detach', mount]);
+        } catch {
+            // Finder/Spotlight can retain this read-only test mount after the game exits.
+            run('hdiutil', ['detach', '-force', mount]);
+        }
     }
     return [dmg, zip];
 }

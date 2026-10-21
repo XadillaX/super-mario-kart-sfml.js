@@ -207,7 +207,7 @@ async function createAppImage(appDir, staging, artifact, run) {
   await verifyChecksum(tool, APPIMAGETOOL_SHA256);
   await run(tool, ['--appimage-extract'], { cwd: tooling });
   await run(path.join(tooling, 'squashfs-root/AppRun'), [
-    '--no-appstream', '--comp', 'gzip', appDir, artifact,
+    '--no-appstream', '--comp', 'zstd', appDir, artifact,
   ], { env: { ...process.env, ARCH: 'x86_64' } });
   await fs.chmod(artifact, 0o755);
 }

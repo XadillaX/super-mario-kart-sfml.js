@@ -17,7 +17,7 @@ const targets = {
 
 /** Execute the marked JavaScript itself, without reimplementing YAML or Actions. */
 async function workflowScript(name) {
-    const source = await fs.readFile(workflowPath, 'utf8');
+    const source = (await fs.readFile(workflowPath, 'utf8')).replace(/\r\n/g, '\n');
     const start = `// BEGIN ${name}\n`;
     const end = `// END ${name}`;
     const offset = source.indexOf(start);

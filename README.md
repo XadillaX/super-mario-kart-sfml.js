@@ -71,6 +71,7 @@ For development:
 | --- | --- |
 | `npm run typecheck` | Check all TypeScript modules without emitting files |
 | `npm run build` | Compile to `dist/` with source maps |
+| `npm run build:release` | Type-check and bundle into a single tree-shaken `dist/main.js` |
 | `node dist/main.js` | Run the compiled game |
 | `npm run dev` | Build and run, equivalent to `npm start` |
 
@@ -89,6 +90,12 @@ builds these native packages:
 Actual filenames also include the game version. All packages contain the same
 game code and assets; the executable embeds **Node.js 22.22.2**. Windows portable
 downloads must keep the `app` directory and DLLs beside the executable.
+
+Release packaging runs esbuild directly on the TypeScript sources and replaces
+`dist/` with one readable `main.js`, without source maps or extra chunks. It folds
+dynamic game imports into that file and removes unused code where possible.
+The SFML package, native binding, shared libraries, and assets remain external.
+Packaged smoke tests exercise the same bundled game classes.
 
 The macOS app is ad-hoc signed and **not notarized**. macOS may block its first
 launch: after trying to open the installed app, use **System Settings → Privacy

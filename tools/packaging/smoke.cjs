@@ -1,6 +1,5 @@
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
-const { createRequire } = require('node:module');
 const path = require('node:path');
 const { setImmediate: yieldToEventLoop } = require('node:timers/promises');
 
@@ -39,7 +38,7 @@ async function checkImages(sf, directory) {
 }
 
 /** Runs against the external payload, with no dependency on the build checkout. */
-async function run(appRoot) {
+async function run(appRoot, runtime) {
     appRoot = fs.realpathSync(appRoot);
     const previousCwd = process.cwd();
     const resultPath = process.env.SMK_SMOKE_RESULT
@@ -49,17 +48,11 @@ async function run(appRoot) {
         fs.rmSync(resultPath, { force: true });
     }
 
-    const appRequire = createRequire(path.join(appRoot, 'dist/main.js'));
-    const sf = appRequire('sfml.js');
-    const { Audio } = appRequire('./audio/audio.js');
-    const { Game } = appRequire('./game.js');
-    const { Settings } = appRequire('./settings.js');
-    const { Input, Key } = appRequire('./input/input.js');
-    const { Map: CourseMap } = appRequire('./map/map.js');
-    const { AIGradientDescent } = appRequire('./ai/gradientdescent.js');
-    const { MAP_TILES_WIDTH, MAP_TILES_HEIGHT, MAP_ASSETS_WIDTH, MAP_ASSETS_HEIGHT } =
-        appRequire('./map/enums.js');
-    const { CIRCUIT_ASSET_NAMES } = appRequire('./states/racemanager.js');
+    const {
+        sf, Audio, Game, Settings, Input, Key, CourseMap, AIGradientDescent,
+        MAP_TILES_WIDTH, MAP_TILES_HEIGHT, MAP_ASSETS_WIDTH, MAP_ASSETS_HEIGHT,
+        CIRCUIT_ASSET_NAMES,
+    } = runtime;
     // Check the pairs before any title/race constructor could regenerate a missing cache.
     const caches = readCaches(appRoot, CIRCUIT_ASSET_NAMES, MAP_TILES_WIDTH * MAP_TILES_HEIGHT);
     const states = new Set();

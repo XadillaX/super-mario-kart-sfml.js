@@ -36,10 +36,11 @@ if (process.platform === 'win32') {
 }
 process.chdir(appRoot);
 (async () => {
+    const game = appRequire('./dist/main.js');
     if (process.argv.includes('--smoke-test')) {
-        await appRequire('./_diagnostics/smoke.cjs').run(appRoot);
+        await game.smokeTest(appRoot);
     } else {
-        await appRequire('./dist/main.js').main();
+        await game.main();
     }
 })().catch(error => {
     console.error(error);
@@ -118,6 +119,10 @@ async function download(url, destination) {
 
 /** Assemble an installed application's immutable code, resources and native binding. */
 async function prepareApp(root, appRoot) {
+    const distFiles = await fs.readdir(path.join(root, 'dist'));
+    if (distFiles.length !== 1 || distFiles[0] !== 'main.js') {
+        throw new Error('Run npm run build:release before packaging: dist must contain only main.js');
+    }
     for (const name of ['dist', 'assets', 'LICENSE', 'README.md']) {
         await copy(path.join(root, name), path.join(appRoot, name), {
             filter: file => !file.endsWith('.map'),
@@ -130,9 +135,6 @@ async function prepareApp(root, appRoot) {
         main: 'dist/main.js',
         license: 'GPL-3.0-only',
     }, null, 2) + '\n');
-    await copy(path.join(root, 'tools/packaging/smoke.cjs'),
-        path.join(appRoot, '_diagnostics/smoke.cjs'));
-
     const nativeSource = path.join(root, 'node_modules/sfml.js');
     const nativeTarget = path.join(appRoot, 'node_modules/sfml.js');
     for (const name of ['dist', 'package.json', 'LICENSE', 'third_party/sfml/license.md']) {

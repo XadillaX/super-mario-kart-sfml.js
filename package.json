@@ -8,10 +8,11 @@
   "main": "dist/main.js",
   "scripts": {
     "build": "tsc -p tsconfig.json",
+    "build:release": "npm run typecheck && node tools/build-release.cjs",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "pretest": "npm run build",
     "test": "node --test test/*.test.cjs",
-    "prepackage": "npm run build",
+    "prepackage": "npm run build:release",
     "package": "node tools/package.cjs",
     "start": "npm run build && node dist/main.js",
     "dev": "npm run start"
@@ -24,6 +25,7 @@
   },
   "devDependencies": {
     "@types/node": "20.19.0",
+    "esbuild": "0.28.2",
     "postject": "1.0.0-alpha.6",
     "rcedit": "5.0.2",
     "sharp": "0.35.5",
