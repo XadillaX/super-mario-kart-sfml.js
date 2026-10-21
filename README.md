@@ -42,7 +42,7 @@ These previews come from the upstream project and show the assets retained by th
 - The native build prerequisites described in the
   [sfml.js installation guide](https://www.npmjs.com/package/sfml.js).
 
-The game installs **sfml.js 1.0.0-rc.2** from npm. Its installation script
+The game installs **sfml.js 1.0.0** from npm. Its installation script
 downloads the SFML libraries and builds the Node.js native binding.
 
 ## Install and run

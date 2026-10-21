@@ -16,7 +16,7 @@
     "node": ">=20.5.0"
   },
   "dependencies": {
-    "sfml.js": "1.0.0-rc.2"
+    "sfml.js": "1.0.0"
   },
   "devDependencies": {
     "@types/node": "20.19.0",
