@@ -1,6 +1,6 @@
 {
   "name": "super-mario-kart-sfml.js",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "private": true,
   "description": "A file-for-file TypeScript port of Süper Mario Kart using sfml.js.",
   "license": "GPL-3.0-only",
