@@ -19,12 +19,8 @@ function nativePlugin() {
                 }
                 const replacement = `
 const bundleFilename = require('node:worker_threads').workerData?.smkBundleFilename || __filename;
-const requireNative = (0, node_module_1.createRequire)(bundleFilename);
-const packagedNative = require('node:path').resolve(
-    require('node:path').dirname(bundleFilename), '../native/build/Release/sfml.node'
-);
-exports.native = requireNative(require('node:fs').existsSync(packagedNative)
-    ? packagedNative : '../node_modules/sfml.js/build/Release/sfml.node');`;
+exports.native = require(${JSON.stringify(path.join(__dirname, 'native-loader.cjs'))})
+    .loadNative(bundleFilename);`;
                 return {
                     contents: normalized.replace(original, replacement),
                     loader: 'js',

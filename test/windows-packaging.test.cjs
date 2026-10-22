@@ -139,3 +139,51 @@ test('platform packaging refuses non-Windows hosts before creating artifacts', {
 }, async () => {
   await assert.rejects(packaging.packagePlatform({ arch: 'x64' }), /Windows/);
 });
+
+test('layout upgrade removes legacy owned files and empty directories while retaining user files', async t => {
+  const directory = await fixture(t);
+  const bundle = path.join(directory, 'bundle');
+  const installed = path.join(directory, 'installation');
+  const manifest = path.join(directory, 'upgrade.nsh');
+  const resources = ['assets/circuit/base.png', 'licenses/SFML.txt', 'LICENSE', 'README.md', 'package.json'];
+  const legacy = [...resources, 'native/build/Release/sfml.node', 'dist/main.js'];
+  for (const name of [...resources, 'sfmljs.dll', 'SuperMarioKart.exe']) {
+    await fs.mkdir(path.dirname(path.join(bundle, name)), { recursive: true });
+    await fs.writeFile(path.join(bundle, name), 'new package');
+  }
+  await fs.cp(bundle, installed, { recursive: true });
+  for (const name of legacy) {
+    await fs.mkdir(path.dirname(path.join(installed, 'app', name)), { recursive: true });
+    await fs.writeFile(path.join(installed, 'app', name), 'old package');
+  }
+  const unowned = ['app/unrelated.txt', 'app/assets/custom.png', 'unrelated.dll'];
+  for (const name of unowned) {
+    await fs.writeFile(path.join(installed, name), 'user file');
+  }
+
+  assert.equal(typeof packaging.writeLegacyManifest, 'function', 'Legacy cleanup manifest is missing');
+  await packaging.writeLegacyManifest(bundle, manifest);
+  for (const line of (await fs.readFile(manifest, 'utf8')).trim().split('\n')) {
+    const match = line.match(/^(Delete|RMDir) "\$INSTDIR\\([^"*?]+)"$/);
+    assert.ok(match, `Unsafe cleanup directive: ${line}`);
+    const target = path.join(installed, ...match[2].split('\\'));
+    try {
+      if (match[1] === 'Delete') await fs.unlink(target);
+      else await fs.rmdir(target);
+    } catch (error) {
+      if (!['ENOENT', 'ENOTEMPTY'].includes(error.code)) throw error;
+    }
+  }
+  for (const name of legacy) {
+    await assert.rejects(fs.access(path.join(installed, 'app', name)), { code: 'ENOENT' });
+  }
+  for (const name of ['app/native', 'app/dist', 'app/licenses', 'app/assets/circuit']) {
+    await assert.rejects(fs.access(path.join(installed, name)), { code: 'ENOENT' });
+  }
+  for (const name of unowned) {
+    assert.equal(await fs.readFile(path.join(installed, name), 'utf8'), 'user file');
+  }
+  for (const name of [...resources, 'sfmljs.dll', 'SuperMarioKart.exe']) {
+    assert.equal(await fs.readFile(path.join(installed, name), 'utf8'), 'new package');
+  }
+});

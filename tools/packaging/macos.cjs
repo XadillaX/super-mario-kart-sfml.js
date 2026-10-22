@@ -74,8 +74,13 @@ async function packagePlatform(context) {
     const contents = path.join(app, 'Contents');
     const resources = path.join(contents, 'Resources');
     await fs.mkdir(resources, { recursive: true });
-    await prepareApp(path.join(resources, 'app'));
-    await createExecutable(path.join(contents, 'MacOS/SuperMarioKart'), '../Resources/app');
+    await prepareApp(resources);
+    // The binding now loads its SFML dependencies from the same Frameworks directory.
+    run('install_name_tool', [
+        '-rpath', '@loader_path/../../third_party/sfml/lib', '@loader_path',
+        path.join(contents, 'Frameworks/sfmljs.node'),
+    ]);
+    await createExecutable(path.join(contents, 'MacOS/SuperMarioKart'), '../Resources');
     const icon = path.join(resources, 'GameIcon.icns');
     await createIcon(root, staging, icon, run);
 

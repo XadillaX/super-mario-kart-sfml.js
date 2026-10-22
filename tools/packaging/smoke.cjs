@@ -45,6 +45,18 @@ async function run(appRoot, runtime) {
         const scripts = fs.readdirSync(appRoot, { recursive: true })
             .filter(name => /\.(?:js|cjs|mjs)$/.test(name));
         assert.deepEqual(scripts, [], 'A native package must not contain external JavaScript');
+        if (process.platform === 'win32') {
+            assert.equal(appRoot, fs.realpathSync(path.dirname(process.execPath)));
+            fs.accessSync(path.join(appRoot, 'sfmljs.dll'));
+            for (const component of ['graphics', 'audio', 'window', 'system']) {
+                fs.accessSync(path.join(appRoot, `sfml-${component}-3.dll`));
+            }
+        } else if (process.platform === 'darwin') {
+            assert.equal(path.basename(appRoot), 'Resources');
+            fs.accessSync(path.resolve(appRoot, '../Frameworks/sfmljs.node'));
+            assert.equal(fs.existsSync(path.join(appRoot, 'app')), false);
+            assert.equal(fs.existsSync(path.join(appRoot, 'native')), false);
+        }
     }
     const previousCwd = process.cwd();
     const resultPath = process.env.SMK_SMOKE_RESULT

@@ -22,7 +22,7 @@ UninstallIcon "@ICON@"
 !define MUI_ABORTWARNING
 
 !insertmacro MUI_PAGE_WELCOME
-!insertmacro MUI_PAGE_LICENSE "@BUNDLE@\app\LICENSE"
+!insertmacro MUI_PAGE_LICENSE "@BUNDLE@\LICENSE"
 !insertmacro MUI_PAGE_COMPONENTS
 !insertmacro MUI_PAGE_DIRECTORY
 !insertmacro MUI_PAGE_INSTFILES
@@ -44,9 +44,8 @@ Section "Game (required)"
   SectionIn RO
   SetOutPath "$INSTDIR"
   File /r "@BUNDLE@\*"
-  ; v1.0.0 stored its game script outside the executable. Remove that owned file only.
-  Delete "$INSTDIR\app\dist\main.js"
-  RMDir "$INSTDIR\app\dist"
+  ; Remove exact known files from the old app layout, retaining user-added content.
+  !include "@LEGACY_FILES@"
   WriteUninstaller "$INSTDIR\Uninstall.exe"
   CreateShortcut "$SMPROGRAMS\${PRODUCT_NAME}.lnk" "$INSTDIR\SuperMarioKart.exe" "" "$INSTDIR\icon.ico"
 

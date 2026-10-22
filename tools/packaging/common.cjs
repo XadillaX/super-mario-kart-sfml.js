@@ -6,6 +6,7 @@ const path = require('node:path');
 const { execFileSync } = require('node:child_process');
 const { retainSfmlNotices } = require('./licenses.cjs');
 const { createGameCodeCache, GAME_PARAMETERS, GAME_FILENAME } = require('./code-cache.cjs');
+const { nativeLayout } = require('./native-layout.cjs');
 
 /** Refuse targets for which sfml.js does not provide native SFML libraries. */
 function validateTarget(platform, arch, version) {
@@ -93,6 +94,23 @@ async function download(url, destination) {
     await fs.writeFile(destination, Buffer.from(await response.arrayBuffer()));
 }
 
+/** Copy the binding and used SFML libraries into the platform's installed layout. */
+async function prepareNative(root, appRoot, platform = process.platform) {
+    const source = path.join(root, 'node_modules/sfml.js');
+    const target = nativeLayout(appRoot, platform);
+    await copy(path.join(source, 'build/Release/sfml.node'), target.addon);
+    // Windows SFML and CRT DLLs are collected together by windows.cjs.
+    if (platform === 'win32') {
+        return;
+    }
+    const libraryDirectory = path.join(source, 'third_party/sfml/lib');
+    for (const entry of await fs.readdir(libraryDirectory)) {
+        if (/^libsfml-(graphics|audio|window|system)[.].*\b(dylib|so)\b/.test(entry)) {
+            await copy(path.join(libraryDirectory, entry), path.join(target.libraries, entry));
+        }
+    }
+}
+
 /** Assemble external resources and native libraries; JavaScript lives in the SEA. */
 async function prepareApp(root, appRoot) {
     const distFiles = await fs.readdir(path.join(root, 'dist'));
@@ -111,25 +129,13 @@ async function prepareApp(root, appRoot) {
         license: 'GPL-3.0-only',
     }, null, 2) + '\n');
     const nativeSource = path.join(root, 'node_modules/sfml.js');
-    const nativeTarget = path.join(appRoot, 'native');
     await copy(path.join(nativeSource, 'LICENSE'), path.join(appRoot, 'licenses/sfml.js.txt'));
     // SFML's numeric operators also import IpAddress and its bundled JS parser.
     await copy(path.join(root, 'node_modules/ipaddr.js/LICENSE'),
         path.join(appRoot, 'licenses/ipaddr.js.txt'));
     await copy(path.join(nativeSource, 'third_party/sfml/license.md'),
         path.join(appRoot, 'licenses/SFML.txt'));
-    await copy(path.join(nativeSource, 'build/Release/sfml.node'),
-        path.join(nativeTarget, 'build/Release/sfml.node'));
-
-    if (process.platform !== 'win32') {
-        const libraryDirectory = path.join(nativeSource, 'third_party/sfml/lib');
-        for (const entry of await fs.readdir(libraryDirectory)) {
-            if (/^libsfml-(graphics|audio|window|system)[.].*\b(dylib|so)\b/.test(entry)) {
-                await copy(path.join(libraryDirectory, entry),
-                    path.join(nativeTarget, 'third_party/sfml/lib', entry));
-            }
-        }
-    }
+    await prepareNative(root, appRoot);
     await retainSfmlNotices(appRoot);
     await download(`https://raw.githubusercontent.com/nodejs/node/${process.version}/LICENSE`,
         path.join(appRoot, 'licenses/Node.js.txt'));
@@ -229,6 +235,6 @@ async function smoke(executable, extraEnv = {}) {
 }
 
 module.exports = {
-    bootstrapSource, copy, createExecutable, download, prepareApp, run, smoke,
+    bootstrapSource, copy, createExecutable, download, prepareApp, prepareNative, run, smoke,
     validateTarget,
 };

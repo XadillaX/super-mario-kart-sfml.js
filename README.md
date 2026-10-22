@@ -89,7 +89,14 @@ builds these native packages:
 
 Actual filenames also include the game version. All packages contain the same
 game code and assets; the executable embeds **Node.js 22.22.2**. Windows portable
-downloads must keep the `app` directory and DLLs beside the executable.
+downloads keep `assets/`, `licenses/`, `sfmljs.dll`, and all SFML/CRT DLLs beside
+`SuperMarioKart.exe`, without an `app/` directory. Keep the extracted folder intact.
+The installer removes known files from the previous `app/` layout during upgrade
+while preserving user-added files.
+
+The macOS bundle places the executable in `Contents/MacOS/`, `sfmljs.node` and
+the SFML dylibs in `Contents/Frameworks/`, and assets and licenses directly in
+`Contents/Resources/`, without a nested `app/` directory.
 
 Release packaging runs esbuild directly on the TypeScript sources and replaces
 `dist/` with one minified `main.js`, without source maps or extra chunks. It bundles
@@ -99,9 +106,10 @@ are compressed; TypeScript sources stay readable. Packages do not ship a
 `node_modules` directory or external JavaScript files. The packager embeds
 `main.js` in the Node.js SEA executable and runs it directly from memory without
 extracting it to disk. The native binding and SFML shared libraries live under
-`native/` (Windows DLLs sit beside the executable); assets and licenses remain
-separate. Packaged smoke tests exercise the embedded game and verify that no
-external JavaScript remains.
+the platform-specific locations above; Linux retains its private `app/native/`
+layout. Windows loads the renamed binding through `process.dlopen()`. Assets
+and licenses remain separate. Packaged smoke tests exercise the embedded game
+and verify that no external JavaScript remains.
 
 The packager also compiles V8 `cachedData` for the complete game bundle using the
 target platform's Node.js 22.22.2 and embeds it alongside the source. Startup

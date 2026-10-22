@@ -31,10 +31,9 @@ function renderInstaller(template, values) {
   });
 }
 
-/** Emit exact owned-file deletes and nonrecursive directory removals in postorder. */
-async function writeUninstallManifest(bundle, destination) {
+/** List shipped files without following directory links or accepting wildcard names. */
+async function bundleFiles(bundle) {
   const files = [];
-  const directories = [];
   /** Visit bundle entries without following links into unrelated directories. */
   async function visit(relative) {
     const entries = await fs.readdir(path.join(bundle, relative), { withFileTypes: true });
@@ -44,13 +43,25 @@ async function writeUninstallManifest(bundle, destination) {
       if (/[*?]/.test(name)) throw new Error(`Invalid Windows bundle filename: ${name}`);
       if (entry.isDirectory()) {
         await visit(name);
-        directories.push(name);
       } else {
         files.push(name);
       }
     }
   }
   await visit('');
+  return files;
+}
+
+/** Emit exact owned-file deletes and nonrecursive directory removals in postorder. */
+async function writeRemovalManifest(files, destination) {
+  const parents = new Set();
+  for (const file of files) {
+    for (let directory = path.dirname(file); directory !== '.'; directory = path.dirname(directory)) {
+      parents.add(directory);
+    }
+  }
+  const directories = [...parents].sort((a, b) =>
+    b.split(path.sep).length - a.split(path.sep).length || a.localeCompare(b));
   const commands = [];
   for (const [command, entries] of [['Delete', files], ['RMDir', directories]]) {
     for (const name of entries) {
@@ -59,6 +70,21 @@ async function writeUninstallManifest(bundle, destination) {
     }
   }
   await fs.writeFile(destination, `${commands.join('\n')}\n`);
+}
+
+/** Remove only the exact files shipped in the current package during uninstall. */
+async function writeUninstallManifest(bundle, destination) {
+  await writeRemovalManifest(await bundleFiles(bundle), destination);
+}
+
+/** Remove known v1.0.0/v1.0.1 app files without deleting user-added content. */
+async function writeLegacyManifest(bundle, destination) {
+  const files = (await bundleFiles(bundle)).filter(file =>
+    ['assets', 'licenses'].includes(file.split(path.sep)[0]) ||
+    ['LICENSE', 'README.md', 'package.json'].includes(file));
+  const legacy = files.map(file => path.join('app', file));
+  legacy.push(path.join('app', 'native/build/Release/sfml.node'), path.join('app', 'dist/main.js'));
+  await writeRemovalManifest(legacy, destination);
 }
 
 /** Locate the newest installed Visual Studio x64 redistributable CRT. */
@@ -135,9 +161,13 @@ async function findMakensis() {
 /** Exercise silent install and uninstall only on the disposable CI runner. */
 async function smokeInstaller(installer, staging, smoke, run) {
   const installed = path.join(staging, 'installed smoke with spaces');
-  await fs.mkdir(path.join(installed, 'app/dist'), { recursive: true });
-  const legacyScript = path.join(installed, 'app/dist/main.js');
-  await fs.writeFile(legacyScript, 'throw new Error("obsolete v1.0.0 external game");');
+  const legacy = ['app/dist/main.js', 'app/native/build/Release/sfml.node',
+    'app/assets/icon.ico', 'app/licenses/SFML.txt', 'app/package.json', 'app/LICENSE'];
+  for (const name of legacy) {
+    const file = path.join(installed, name);
+    await fs.mkdir(path.dirname(file), { recursive: true });
+    await fs.writeFile(file, 'obsolete package file');
+  }
   const unowned = [
     path.join(installed, 'unrelated.dll'),
     path.join(installed, 'app/unrelated.txt'),
@@ -148,8 +178,11 @@ async function smokeInstaller(installer, staging, smoke, run) {
   const options = { windowsVerbatimArguments: true, timeout: 180_000 };
   await run(installer, ['/S', `/D=${installed}`], options);
   try {
-    if ((await fs.readdir(path.dirname(legacyScript))).includes('main.js')) {
-      throw new Error('Upgrade retained the obsolete external game script');
+    const remaining = await fs.readdir(installed, { recursive: true });
+    for (const name of legacy) {
+      if (remaining.includes(path.normalize(name))) {
+        throw new Error(`Upgrade retained an obsolete package file: ${name}`);
+      }
     }
     await smoke(path.join(installed, 'SuperMarioKart.exe'));
   } finally {
@@ -178,8 +211,8 @@ async function packagePlatform(context) {
   const installer = path.join(output, `${basename}-setup.exe`);
   await fs.mkdir(bundle, { recursive: true });
   await fs.mkdir(output, { recursive: true });
-  await prepareApp(path.join(bundle, 'app'));
-  await createExecutable(executable, 'app');
+  await prepareApp(bundle);
+  await createExecutable(executable, '.');
   await copyRuntimeLibraries(root, bundle, await findCrtDirectory(run));
   await fs.copyFile(path.join(root, 'assets/icon.ico'), path.join(bundle, 'icon.ico'));
   await smoke(executable);
@@ -203,7 +236,9 @@ async function packagePlatform(context) {
   const template = await fs.readFile(path.join(__dirname, 'windows/installer.nsi'), 'utf8');
   const script = path.join(staging, 'installer.nsi');
   const uninstallFiles = path.join(staging, 'uninstall-files.nsh');
+  const legacyFiles = path.join(staging, 'legacy-files.nsh');
   await writeUninstallManifest(bundle, uninstallFiles);
+  await writeLegacyManifest(bundle, legacyFiles);
   await fs.writeFile(script, renderInstaller(template, {
     PRODUCT_NAME: productName,
     VERSION: version,
@@ -211,6 +246,7 @@ async function packagePlatform(context) {
     OUTPUT: installer,
     ICON: path.join(root, 'assets/icon.ico'),
     UNINSTALL_FILES: uninstallFiles,
+    LEGACY_FILES: legacyFiles,
   }));
   await run(await findMakensis(), ['/INPUTCHARSET', 'UTF8', script]);
   await fs.access(installer);
@@ -224,5 +260,6 @@ module.exports = {
   packagePlatform,
   powerShellLiteral,
   renderInstaller,
+  writeLegacyManifest,
   writeUninstallManifest,
 };
