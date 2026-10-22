@@ -5,6 +5,7 @@ const os = require('node:os');
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
 const { retainSfmlNotices } = require('./licenses.cjs');
+const { createGameCodeCache, GAME_PARAMETERS, GAME_FILENAME } = require('./code-cache.cjs');
 
 /** Refuse targets for which sfml.js does not provide native SFML libraries. */
 function validateTarget(platform, arch, version) {
@@ -27,8 +28,9 @@ function bootstrapSource(relativeAppPath) {
     return `'use strict';
 const path = require('node:path');
 const { createRequire } = require('node:module');
-const { getAsset } = require('node:sea');
+const { getAsset, getRawAsset } = require('node:sea');
 const { compileFunction } = require('node:vm');
+const { performance } = require('node:perf_hooks');
 const appRoot = path.resolve(path.dirname(process.execPath), ${JSON.stringify(relativeAppPath)});
 // This filename is virtual: __dirname-based game and native paths remain stable.
 const filename = path.join(appRoot, 'dist/main.js');
@@ -39,8 +41,24 @@ if (process.platform === 'win32') {
 process.chdir(appRoot);
 (async () => {
     const gameModule = { exports: {} };
-    const load = compileFunction(getAsset('game.js', 'utf8'),
-        ['exports', 'require', 'module', '__filename', '__dirname'], { filename });
+    const source = getAsset('game.js', 'utf8');
+    const cachedData = Buffer.from(getRawAsset('game.cachedData'));
+    const started = performance.now();
+    const load = compileFunction(source, ${JSON.stringify(GAME_PARAMETERS)}, {
+        filename: ${JSON.stringify(GAME_FILENAME)},
+        cachedData,
+    });
+    if (process.argv.includes('--smoke-test')) {
+        if (load.cachedDataRejected !== false) {
+            throw new Error('V8 rejected the embedded game code cache');
+        }
+        console.log('Game code cache:', JSON.stringify({
+            accepted: true,
+            bytes: cachedData.length,
+            compileMs: performance.now() - started,
+        }));
+    }
+    // V8 recompiles from source if cachedData is rejected during normal startup.
     load(gameModule.exports, appRequire, gameModule, filename, path.dirname(filename));
     const game = gameModule.exports;
     if (process.argv.includes('--smoke-test')) {
@@ -131,11 +149,19 @@ async function createExecutable(root, staging, executable, relativeAppPath, vers
     const main = path.join(sea, 'bootstrap.cjs');
     const blob = path.join(sea, 'bootstrap.blob');
     const config = path.join(sea, 'sea-config.json');
+    const gameSource = path.join(root, 'dist/main.js');
+    const cacheFile = path.join(sea, 'game.cachedData');
+    const cachedData = createGameCodeCache(await fs.readFile(gameSource, 'utf8'));
+    await fs.writeFile(cacheFile, cachedData);
+    console.log(`Embedded game code cache: ${cachedData.length} bytes`);
     await fs.writeFile(main, bootstrapSource(relativeAppPath));
     await fs.writeFile(config, JSON.stringify({
         main,
         output: blob,
-        assets: { 'game.js': path.join(root, 'dist/main.js') },
+        assets: {
+            'game.js': gameSource,
+            'game.cachedData': cacheFile,
+        },
         disableExperimentalSEAWarning: true,
         useSnapshot: false,
         useCodeCache: false,

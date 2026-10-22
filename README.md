@@ -103,6 +103,13 @@ extracting it to disk. The native binding and SFML shared libraries live under
 separate. Packaged smoke tests exercise the embedded game and verify that no
 external JavaScript remains.
 
+The packager also compiles V8 `cachedData` for the complete game bundle using the
+target platform's Node.js 22.22.2 and embeds it alongside the source. Startup
+passes this cache to `vm.compileFunction()`; native SFML initialization still
+happens at runtime. Packaged smoke tests require an accepted cache. Normal
+startup falls back to compiling the source if V8 rejects it. This uses a code
+cache, not a startup snapshot.
+
 The macOS app is ad-hoc signed and **not notarized**. macOS may block its first
 launch: after trying to open the installed app, use **System Settings → Privacy
 & Security → Open Anyway**. There is no Developer ID or Apple account dependency
